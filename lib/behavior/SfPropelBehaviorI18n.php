@@ -211,6 +211,7 @@ EOF;
    */
   public function objectFilter(&$script)
   {
+
     if (!$this->hasPrimaryString($this->getTable()) && $this->hasPrimaryString($this->getI18nTable()))
     {
       $foreignKey = $this->getI18nTable()->getBehavior('symfony_i18n_translation')->getForeignKey();
@@ -232,6 +233,16 @@ EOF;
       $parser->replaceMethod('__toString', $toString);
       $script = $parser->getCode();
     }
+
+    $table = $this->getTable();
+    $i18nTable = $this->getI18nTable();
+		$tablePhpName = $this->getTable()->getPhpName();
+    $i18nTablePhpName = $this->getI18nTable()->getPhpName();
+    $pattern = '/foreach \(\$this->coll'.$i18nTablePhpName.'s as \$referrerFK\) \{/';
+    $addition = "
+          \$referrerFK->set".$tablePhpName."(\$this);";
+		$replacement = "\$0$addition";
+		$script = preg_replace($pattern, $replacement, $script);
   }
 
   public function staticMethods()
@@ -336,6 +347,77 @@ static public function doSelectWithI18n(Criteria \$criteria, \$culture = null, \
 	\$stmt->closeCursor();
 
 	return \$results;
+}
+
+EOF;
+  }
+
+  public function queryMethods(QueryBuilder $builder)
+  {
+    $foreignKey = $this->getI18nTable()->getBehavior('symfony_i18n_translation')->getForeignKey();
+    $join = in_array($this->getBuildProperty('propel.useLeftJoinsInDoJoinMethods'), array(true, null), true) ? 'LEFT' : 'INNER';
+    $localeColumn = $this->getI18nTable()->getBehavior('symfony_i18n_translation')->getCultureColumn()->getPhpName();
+    $queryClass = $builder->getStubQueryBuilder()->getClassname();
+    $i18nRelationName = $builder->getRefFKPhpNameAffix($foreignKey);
+
+    return <<<EOF
+
+/**
+ * Adds a JOIN clause to the query using the i18n relation
+ *
+ * @param     string \$culture Locale to use for the join condition, e.g. 'fr_FR'
+ * @param     string \$relationAlias optional alias for the relation
+ * @param     string \$joinType Accepted values are null, 'left join', 'right join', 'inner join'. Defaults to left join.
+ *
+ * @return    {$queryClass} The current query, for fluid interface
+ */
+public function joinI18n(\$culture = null, \$relationAlias = null, \$joinType = Criteria::{$join}_JOIN)
+{
+  if (null === \$culture)
+  {
+    \$culture = sfPropel::getDefaultCulture();
+  }
+
+  \$relationName = \$relationAlias ? \$relationAlias : '{$i18nRelationName}';
+  return \$this
+    ->join{$i18nRelationName}(\$relationAlias, \$joinType)
+    ->addJoinCondition(\$relationName, \$relationName . '.{$localeColumn} = ?', \$culture);
+}
+
+/**
+ * Adds a JOIN clause to the query and hydrates the related I18n object.
+ * Shortcut for \$c->joinI18n(\$culture)->with()
+ *
+ * @param     string \$culture Locale to use for the join condition, e.g. 'fr_FR'
+ * @param     string \$joinType Accepted values are null, 'left join', 'right join', 'inner join'. Defaults to left join.
+ *
+ * @return    {$queryClass} The current query, for fluid interface
+ */
+public function joinWithI18n(\$culture = null, \$joinType = Criteria::{$join}_JOIN)
+{
+  \$this
+    ->joinI18n(\$culture, null, \$joinType)
+    ->with('{$i18nRelationName}');
+  \$this->with['{$i18nRelationName}']->setIsWithOneToMany(false);
+  return \$this;
+}
+
+/**
+ * Use the I18n relation query object
+ *
+ * @see       useQuery()
+ *
+ * @param     string \$culture Locale to use for the join condition, e.g. 'fr_FR'
+ * @param     string \$relationAlias optional alias for the relation
+ * @param     string \$joinType Accepted values are null, 'left join', 'right join', 'inner join'. Defaults to left join.
+ *
+ * @return    {$i18nRelationName}Query A secondary query class using the current class as primary query
+ */
+public function useI18nQuery(\$culture = null, \$relationAlias = null, \$joinType = Criteria::{$join}_JOIN)
+{
+  return \$this
+    ->joinI18n(\$culture, \$relationAlias, \$joinType)
+    ->useQuery(\$relationAlias ? \$relationAlias : '{$i18nRelationName}', '{$i18nRelationName}Query');
 }
 
 EOF;
