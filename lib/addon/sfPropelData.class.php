@@ -147,12 +147,25 @@ class sfPropelData extends sfData
 
         foreach ($data as $name => $value)
         {
-          if (is_array($value) && 's' == substr($name, -1))
+          try
           {
-            // many to many relationship
-            $this->loadMany2Many($obj, substr($name, 0, -1), $value);
-
-            continue;
+            if (is_array($value) && 's' == substr($name, -1))
+            {
+              // many to many relationship
+              $this->loadMany2Many($obj, substr($name, 0, -1), $value);
+              continue;
+            }
+          }
+          catch (PropelException $e)
+          {
+            // Check whether this is actually an array stored in the object.
+            if ('Cannot fetch TableMap for undefined table: '.substr($name, 0, -1) === $e->getMessage())
+            {
+              if ($tableMap->getColumn($name)->getType() !== 'ARRAY')
+              {
+                throw $e;
+              }
+            }
           }
 
           $isARealColumn = true;
@@ -197,7 +210,7 @@ class sfPropelData extends sfData
         // save the object for future reference
         if (method_exists($obj, 'getPrimaryKey'))
         {
-          $this->object_references[Propel::importClass(constant(constant($class.'::PEER').'::CLASS_DEFAULT')).'_'.$key] = $obj;
+          $this->object_references[$class.'_'.$key] = $obj;
         }
       }
     }
@@ -481,6 +494,12 @@ class sfPropelData extends sfData
               }
               elseif (!$isPrimaryKey || ($isPrimaryKey && !$tableMap->isUseIdGenerator()))
               {
+                if (!empty($row[$col]) && 'ARRAY' === $column->getType())
+                {
+                  $serialized = substr($row[$col], 2, -2);
+                  $row[$col] = $serialized ? explode(' | ', $serialized) : array();
+                }
+
                 // We did not want auto incremented primary keys
                 $values[$col] = $row[$col];
               }

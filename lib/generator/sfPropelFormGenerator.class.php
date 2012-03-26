@@ -87,14 +87,19 @@ class sfPropelFormGenerator extends sfGenerator
       $this->table = $table;
 
       // find the package to store forms in the same directory as the model classes
-      $packages = explode('.', constant(constant($table->getClassname().'::PEER').'::CLASS_DEFAULT'));
+      $reflClass = new ReflectionClass($table->getClassname());
+      $packages  = explode(DIRECTORY_SEPARATOR, $reflClass->getFileName());
       array_pop($packages);
+
       if (false === $pos = array_search($this->params['model_dir_name'], $packages))
       {
-        throw new InvalidArgumentException(sprintf('Unable to find the model dir name (%s) in the package %s.', $this->params['model_dir_name'], constant(constant($table->getClassname().'::PEER').'::CLASS_DEFAULT')));
+        throw new InvalidArgumentException(
+          sprintf('Unable to find the model dir name (%s) in the package %s.', $this->params['model_dir_name'], implode('.', $packages))
+        );
       }
+
       $packages[$pos] = $this->params['form_dir_name'];
-      $baseDir = sfConfig::get('sf_root_dir').'/'.implode(DIRECTORY_SEPARATOR, $packages);
+      $baseDir = implode(DIRECTORY_SEPARATOR, $packages);
 
       if (!is_dir($baseDir.'/base'))
       {
@@ -119,35 +124,48 @@ class sfPropelFormGenerator extends sfGenerator
   public function getManyToManyTables()
   {
     $tables = array();
+    $foreignTables = array();
+    $relations = array();
 
-    // go through all tables to find m2m relationships
-    foreach ($this->dbMap->getTables() as $tableName => $table)
+    // go through all relations
+    foreach  ($this->table->getRelations() as $relation)
     {
-      foreach ($table->getColumns() as $column)
+      //we have a many to many Relation
+      if (RelationMap::MANY_TO_MANY === $relation->getType())
       {
-        if ($column->isForeignKey() && $column->isPrimaryKey() && $this->table->getClassname() == $this->getForeignTable($column)->getClassname())
-        {
-          // we have a m2m relationship
-          // find the other primary key
-          foreach ($table->getColumns() as $relatedColumn)
-          {
-            if ($relatedColumn->isForeignKey() && $relatedColumn->isPrimaryKey() && $this->table->getClassname() != $this->getForeignTable($relatedColumn)->getClassname())
-            {
-              // we have the related table
-              $tables[] = array(
-                'middleTable'   => $table,
-                'relatedTable'  => $this->getForeignTable($relatedColumn),
-                'column'        => $column,
-                'relatedColumn' => $relatedColumn,
-              );
-
-              break 2;
-            }
-          }
-        }
+        $foreignTables[$relation->getLocalTable()->getClassname()] = $relation->getLocalTable();
+      }
+      else if (RelationMap::ONE_TO_MANY === $relation->getType())
+      {
+        $relations[$relation->getLocalTable()->getClassname()] = $relation;
       }
     }
 
+    // find middleTable for Many to Many relation
+    foreach ($foreignTables as $tableName => $foreignTable)
+    {
+      foreach ($foreignTable->getRelations() as $foreignRelation)
+      {
+        $foreignTableName = $foreignRelation->getLocalTable()->getClassname();
+
+        // Test if the foreign table has a common relation with our table
+        // TODO: test if is CrossRef
+        if (RelationMap::ONE_TO_MANY === $foreignRelation->getType()
+            && array_key_exists($foreignTableName, $relations))
+        {
+          $columns = $relations[$foreignTableName]->getLocalColumns();
+          $relatedColumns = $foreignRelation->getLocalColumns();
+
+          $tables[] = array(
+            'middleTable'   => $foreignRelation->getLocalTable(),
+            'relatedTable'  => $foreignTable,
+            'column'        => reset($columns),
+            'relatedColumn' => reset($relatedColumns),
+          );
+          continue 2;
+        }
+      }
+    }
     return $tables;
   }
 
@@ -284,7 +302,7 @@ class sfPropelFormGenerator extends sfGenerator
       $valueSet = $column->getValueSet();
       $choices = array_merge(array(''=>''), array_combine($valueSet, $valueSet));
 
-      $options[] = sprintf("'choices' => %s", preg_replace('/\s+/', '', var_export($choices, true)));
+      $options[] = sprintf("'choices' => %s", preg_replace('/[\n\r]+/', '', var_export($choices, true)));
     }
 
     return count($options) ? sprintf('array(%s)', implode(', ', $options)) : '';
@@ -402,7 +420,7 @@ class sfPropelFormGenerator extends sfGenerator
          break;
        case PropelColumnTypes::ENUM:
          $valueSet = $column->getValueSet();
-         $options[] = sprintf("'choices' => %s", preg_replace('/\s+/', '', var_export($valueSet, true)));
+         $options[] = sprintf("'choices' => %s", preg_replace('/[\n\r]+/', '', var_export($valueSet, true)));
          break;
       }
     }
@@ -534,7 +552,7 @@ class sfPropelFormGenerator extends sfGenerator
     foreach ($classes as $class)
     {
       $omClass = basename($class, 'TableMap.php');
-      if (class_exists($omClass) && is_subclass_of($omClass, 'BaseObject') && constant($omClass.'Peer::DATABASE_NAME') == $this->params['connection'])
+      if (class_exists($omClass) && is_subclass_of($omClass, 'BaseObject') && ($this->params['all_connections'] || constant($omClass.'Peer::DATABASE_NAME') == $this->params['connection']))
       {
         $tableMapClass = basename($class, '.php');
         $this->dbMap->addTableFromMapClass($tableMapClass);

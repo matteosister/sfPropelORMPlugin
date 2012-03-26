@@ -278,3 +278,33 @@ $b->
     isError('author_article_list', 'invalid')->
   end()
 ;
+
+//Checks if the generator can create a choices widget based on a enum values with spaces
+$b->
+  get('/enum/enum')->
+  with('request')->begin()->
+    isParameter('module', 'enum')->
+    isParameter('action', 'enum')->
+  end()->
+  with('response')->begin()->
+    isStatusCode(200)->
+    checkElement('select option[selected="selected"]', 'three space')->
+  end()
+;
+
+//Checks that many-to-many relations are generated correctly
+$form = new SellerForm();
+try {
+    $form->getWidget('sale_list');
+    $b->test()->fail('The seller form shoud not has sale_list field because it is not a many to many relation');
+} catch (InvalidArgumentException $e) {
+    $b->test()->pass('The seller form shoud not has sale_list field because it is not a many to many relation');
+}
+
+$form = new BookForm();
+try {
+    $form->getWidget('sale_list');
+    $b->test()->fail('The book form shoud not has sale_list field because it is not a many to many relation');
+} catch (InvalidArgumentException $e) {
+    $b->test()->pass('The book form shoud not has sale_list field because it is not a many to many relation');
+}

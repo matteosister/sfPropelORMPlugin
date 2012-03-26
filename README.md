@@ -1,6 +1,8 @@
 sfPropelORMPlugin
 =================
 
+[![Build Status](https://secure.travis-ci.org/propelorm/sfPropelORMPlugin.png?branch=master)](http://travis-ci.org/propelorm/sfPropelORMPlugin)
+
 Replaces symfony's core Propel plugin by the latest version of Propel, in branch 1.6.
 
 ## Installation
@@ -185,6 +187,20 @@ class ArticleForm extends BaseArticleForm
 ```
 
 The Propel widgets, validators, and form classes are fully documented in the [`doc/form.md`](https://raw.github.com/propelorm/sfPropelORMPlugin/master/doc/form.md) file in this plugin source code.
+
+## Filter Subframework modification
+
+You now can merge or embed filters into filters, it works out of the box.
+
+``` php
+class ArticleFilter extends BaseArticleFilter
+{
+  public function configure()
+  {
+    $this->mergeForm(new AuthorFilter());
+  }
+}
+```
 
 ## Routing Modifications
 
